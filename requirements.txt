@@ -1,2 +1,2 @@
 spacy>=3.0.0
-inflect>=6.0.0
+num2words

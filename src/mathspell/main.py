@@ -102,7 +102,7 @@ def analyze_text(text: str) -> str:
             next_token = doc[i + 1] if i + 1 < len(doc) else None
 
             if looks_like_year_context(token) and 1000 <= numeric_val <= 2100:
-                if next_token.text == 'times':
+                if next_token and next_token.text == 'times':
                     pass
                 else:
                     transformed_tokens.append(convert_number_to_words(numeric_val, to_year=True))
@@ -167,3 +167,8 @@ def analyze_text(text: str) -> str:
                     final_output.append(tok)
 
     return "".join(final_output).strip()
+
+if __name__=='__main__':
+    input = ("In 1913")
+    print(analyze_text(input))
+
