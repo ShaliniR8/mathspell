@@ -6,22 +6,24 @@ def install_spacy_model():
 
 setup(
     name="mathspell",
-    version="0.1",
+    version="0.0.1",
     packages=find_packages(where="src"),
     package_dir={"": "src"},
     install_requires=[
-        "spacy>=3.0.0",
-        "num2words>=0.5.0",
+        "spacy",
+        "num2words",
     ],
     description="A library for converting numbers to words contextually.",
+    long_description=open("README.md").read(),
     author="ShaliniR8",
     author_email="shaliniroy1008@gmail.com",
     url="https://github.com/ShaliniR8/mathspell",
     classifiers=[
         "Programming Language :: Python :: 3",
         "License :: OSI Approved :: MIT License",
+        "Operating System :: OS Independent",
     ],
-    python_requires=">=3.9",
+    python_requires=">=3.10",
 )
 
 # Automatically install the spaCy model after installing the package
