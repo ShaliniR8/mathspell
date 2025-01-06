@@ -141,6 +141,8 @@ def analyze_text(text: str) -> str:
 
     while i < len(doc):
         token = doc[i]
+        prev_token = doc[i - 1] if i - 1 >= 0 else None
+        next_token = doc[i + 1] if i + 1 < len(doc) else None
         if token.like_num and (i + 2) < len(doc):
             next_token = doc[i + 1]
             next_next_token = doc[i + 2]
@@ -197,9 +199,6 @@ def analyze_text(text: str) -> str:
                 transformed_tokens.append(token.text)
                 i += 1
                 continue
-
-            prev_token = doc[i - 1] if i - 1 >= 0 else None
-            next_token = doc[i + 1] if i + 1 < len(doc) else None
 
             if next_token and next_token.text == "%":
                 converted = handle_percentage(numeric_val)
@@ -284,9 +283,24 @@ def analyze_text(text: str) -> str:
             i += 1
             continue
 
-        # Handle percentage symbol if it's standalone
+        # handle percentage symbol if it's standalone
         if token.text == "%":
             transformed_tokens.append("percent")
+            i += 1
+            continue
+
+        match = re.match(r"(\d+(?:\.\d+)?)([a-zA-Z]+)", token.text)
+        if match:
+            number, unit = match.groups()
+            if unit in UNIT_MAP:
+                number_word = num2words(float(number)) if '.' in number else num2words(int(number))
+                transformed_tokens.append(f"{number_word} {UNIT_MAP[unit]}")
+                i += 1
+                continue
+
+        # handle standalone unit abbrv.
+        if token.text in UNIT_MAP and prev_token.like_num:
+            transformed_tokens.append(UNIT_MAP[token.text])
             i += 1
             continue
 
