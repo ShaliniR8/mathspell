@@ -3,6 +3,11 @@ import spacy
 from spacy.tokenizer import Tokenizer
 import spacy.util
 from num2words import num2words
+from unit_parse import parser as quantity_parser
+from price_parser import Price 
+
+def currency_parser(string: str):
+    return Price.from_string(string)
 
 nlp = spacy.load("en_core_web_sm")
 
@@ -10,13 +15,6 @@ def custom_tokenizer(nlp):
     prefix_patterns = list(nlp.Defaults.prefixes)
     infix_patterns = list(nlp.Defaults.infixes)
     suffix_patterns = list(nlp.Defaults.suffixes)
-
-    if r"\$" not in prefix_patterns:
-        prefix_patterns.append(r"\$")
-
-    extra_infix = r"(?<=[0-9])\.(?=[A-Z])"
-    if extra_infix not in infix_patterns:
-        infix_patterns.append(extra_infix)
 
     if r"(?<=[0-9])/(?=[0-9])" not in infix_patterns:
         infix_patterns.append(r"(?<=[0-9])/(?=[0-9])")
@@ -27,7 +25,6 @@ def custom_tokenizer(nlp):
 
     return Tokenizer(
         nlp.vocab,
-        rules=nlp.Defaults.tokenizer_exceptions,
         prefix_search=prefix_regex.search,
         suffix_search=suffix_regex.search,
         infix_finditer=infix_regex.finditer
@@ -46,17 +43,6 @@ OPERATOR_MAP = {
     '//': 'integer division by',
     '(': 'open parentheses',
     ')': 'close parentheses',
-}
-
-UNIT_MAP = {
-    'kg': 'kilograms',
-    'km': 'kilometers',
-    'm': 'meters',
-    'cm': 'centimeters',
-    'mm': 'millimeters',
-    'ft': 'feet',
-    'in': 'inches',
-    # TODO: More units
 }
 
 # currencies
@@ -115,6 +101,10 @@ def is_illion_scale(token):
     return abbreviation in {"m", "b", "t"}
 
 # math
+
+def token_looks_like_fraction(token, next_token, next_next_token) -> bool:
+    return (token.like_num and next_next_token and next_token.text == '/' and next_next_token.like_num)
+
 def handle_percentage(number: float) -> str:
     if number == 100:
         return "hundred percent"
@@ -129,13 +119,65 @@ def handle_percentage(number: float) -> str:
     
     return f"{number_words} percent"
 
+def token_is_a_quantity(token):
+    q = quantity_parser(token.text)
+    return bool(q and not q.dimensionless)
+
+def convert_token_to_quantity(token):
+    q = quantity_parser(token.text)
+    magnitude = q.magnitude
+    units = " ".join(list(q.units._units))
+    # TODO: Handle cases where units is like 'foot ** 2'. Perhaps generate another NLP doc?
+    if magnitude > 1:
+        if units == 'foot':
+            units = 'feet'
+        else:
+            units += 's'
+    return f"{num2words(magnitude)} {units}"
+
+def tokens_are_a_quantity(token, next_token):
+    q = quantity_parser(f"{token.text} {next_token.text}")
+    return bool(q and not q.dimensionless)
+
+def convert_tokens_to_quantity(token, next_token):
+    q = quantity_parser(f"{token.text} {next_token.text}")
+    magnitude = q.magnitude
+    units = " ".join(list(q.units._units))
+    if magnitude > 1:
+        if units == 'foot':
+            units = 'feet'
+        else:
+            units += 's'
+    return f"{num2words(magnitude)} {units}"
+
+def token_has_exponential_notation(token):
+    return bool(re.match(r"(\d+(?:\.\d+)?)[e]([+-]?\d+)", token.text, re.IGNORECASE))
+        
+def convert_exponential_notation_string(token_text:str):
+    match = re.match(r"(\d+(?:\.\d+)?)[eE]([+-]?\d+)", token_text, re.IGNORECASE)
+    if not match:
+        return token_text
+    else:
+        base = match.group(1)
+        exponent = match.group(2)
+        try:
+            return f"{num2words(base)} times ten to the power of {num2words(exponent)}"
+        except ValueError:
+            return token_text
+
+# other helper functions
 def convert_number_to_words(number: float, to_year: bool = False) -> str:
     if to_year and number.is_integer():
         return num2words(int(number), to="year")
     return num2words(int(number)) if number.is_integer() else num2words(number)
 
+def preprocess_text(text: str) -> str:
+    preprocessed_text = text
+    return preprocessed_text
+
 def analyze_text(text: str) -> str:
-    doc = nlp(text)
+    doc = nlp(preprocess_text(text))
+    #breakpoint()
     transformed_tokens = []
     i = 0
 
@@ -143,60 +185,64 @@ def analyze_text(text: str) -> str:
         token = doc[i]
         prev_token = doc[i - 1] if i - 1 >= 0 else None
         next_token = doc[i + 1] if i + 1 < len(doc) else None
-        if token.like_num and (i + 2) < len(doc):
-            next_token = doc[i + 1]
-            next_next_token = doc[i + 2]
-            if next_token.text == '/' and next_next_token.like_num:
-                try:
-                    numerator = float(token.text.replace(',', ''))
-                    denominator = float(next_next_token.text.replace(',', ''))
-                    numerator_word = num2words(int(numerator)) if numerator.is_integer() else num2words(numerator)
-                    denominator_word = num2words(int(denominator)) if denominator.is_integer() else num2words(denominator)
-                    fraction = f"{numerator_word} over {denominator_word}"
-                    transformed_tokens.append(fraction)
-                    i += 3  # skip the three tokens: number, '/', number
-                    continue
-                except ValueError:
-                    pass
-
-        if '/' in token.text and token.text.count('/') == 1:
-            parts = token.text.split('/')
-            if len(parts) == 2 and all(part.isdigit() for part in parts):
-                numerator, denominator = parts
-                numerator_word = num2words(int(numerator)) if float(numerator).is_integer() else num2words(float(numerator))
-                denominator_word = num2words(int(denominator)) if float(denominator).is_integer() else num2words(float(denominator))
-                fraction = f"{numerator_word} over {denominator_word}"
-                transformed_tokens.append(fraction)
-                i += 1  # skip the fraction token
-                continue
+        next_next_token = doc[i + 2] if i + 2 < len(doc) else None
 
         if token.is_space:
             transformed_tokens.append(token.text)
             i += 1
             continue
 
-        # Handle punctuation separately (including parentheses)
         if token.is_punct:
             if token.text in OPERATOR_MAP:
-                # Parentheses handling
                 transformed_tokens.append(OPERATOR_MAP[token.text])
             else:
                 transformed_tokens.append(token.text)
             i += 1
             continue
 
-        # Handle ordinals
+        if token_has_exponential_notation(token):
+            transformed_tokens.append(convert_exponential_notation_string(token.text))
+            i += 1
+            continue
+
         if token_is_ordinal(token):
             transformed_tokens.append(convert_ordinal_string(token.text))
             i += 1
             continue
 
-        # Handle numerical values
+        if token_is_a_quantity(token):
+            transformed_tokens.append(convert_token_to_quantity(token))
+            i += 1
+            continue
+
+        if token.like_num and next_token and tokens_are_a_quantity(token, next_token):
+            transformed_tokens.append(convert_tokens_to_quantity(token, next_token))
+            i += 2
+            continue
+
+        if token_looks_like_fraction(token, next_token, next_next_token):
+            # TODO: Needs more work separating division operation and fraction
+            try:
+                numerator = float(token.text.replace(',', ''))
+                denominator = float(next_next_token.text.replace(',', ''))
+                numerator_word = num2words(int(numerator)) if numerator.is_integer() else num2words(numerator)
+                denominator_word = num2words(int(denominator)) if denominator.is_integer() else num2words(denominator)
+                fraction = f"{numerator_word} over {denominator_word}"
+                transformed_tokens.append(fraction)
+                i += 3  # skip the three tokens: number, '/', number
+                continue
+            except ValueError:
+                pass
+
         if token.like_num:
             try:
                 numeric_val = float(token.text.replace(',', ''))
             except ValueError:
-                transformed_tokens.append(token.text)
+                if token.text.count('.') > 1: 
+                    transformed_text = " point ".join([*map(num2words, token.text.split('.'))])
+                    transformed_tokens.append(transformed_text)
+                else:
+                    transformed_tokens.append(token.text)
                 i += 1
                 continue
 
@@ -253,9 +299,8 @@ def analyze_text(text: str) -> str:
                 converted = interpret_currency_large_scale(numeric_val, scale_word)
 
                 # check if 'dollars' follows the scale word
-                if (i + 2) < len(doc):
-                    subsequent_token = doc[i + 2]
-                    if subsequent_token.lemma_.lower() in {"dollar", "dollars", "usd"}:
+                if next_next_token:
+                    if next_next_token.lemma_.lower() in {"dollar", "dollars", "usd"}:
                         converted += " dollars"
                         i += 3  # skip number, scale word, and 'dollars'
                     else:
@@ -289,21 +334,6 @@ def analyze_text(text: str) -> str:
             i += 1
             continue
 
-        match = re.match(r"(\d+(?:\.\d+)?)([a-zA-Z]+)", token.text)
-        if match:
-            number, unit = match.groups()
-            if unit in UNIT_MAP:
-                number_word = num2words(float(number)) if '.' in number else num2words(int(number))
-                transformed_tokens.append(f"{number_word} {UNIT_MAP[unit]}")
-                i += 1
-                continue
-
-        # handle standalone unit abbrv.
-        if token.text in UNIT_MAP and prev_token.like_num:
-            transformed_tokens.append(UNIT_MAP[token.text])
-            i += 1
-            continue
-
         if token.text in OPERATOR_MAP:
             operator_word = OPERATOR_MAP[token.text]
             transformed_tokens.append(operator_word)
@@ -330,3 +360,6 @@ def analyze_text(text: str) -> str:
                     final_output.append(tok)
 
     return "".join(final_output).strip()
+
+if __name__ == '__main__':
+    print(analyze_text('I have five dollars and € ten'))
