@@ -1,15 +1,75 @@
 import re
 import spacy
+import warnings
 from spacy.tokenizer import Tokenizer
 import spacy.util
 from num2words import num2words
 from unit_parse import parser as quantity_parser
-from price_parser import Price 
-
-def currency_parser(string: str):
-    return Price.from_string(string)
 
 nlp = spacy.load("en_core_web_sm")
+
+# TODO: Move into a different file
+OPERATOR_MAP = {
+    '+': 'plus',
+    '-': 'minus',
+    '*': 'times',
+    '/': 'divided by',  # TODO: divided by or over?
+    '=': 'equals',
+    '^': 'to the power of',
+    '**': 'to the power of',
+    '//': 'integer division by',
+    '(': 'open parentheses',
+    ')': 'close parentheses',
+}
+
+CURRENCY_MAP = {
+    '$': 'dollar',
+    '€': 'euro',
+    '£': 'pound',
+    '¥': 'yen',
+    '₹': 'rupee',
+    '₽': 'ruble',
+    '₩': 'won',
+    '₪': 'shekel',
+    '฿': 'baht',
+    '₫': 'dong',
+    '₱': 'peso',
+    '₴': 'hryvnia',
+    '₦': 'naira',
+    '₲': 'guarani',
+    '₵': 'cedi',
+    '₡': 'colón',
+    '₮': 'tögrög',
+    '₸': 'tenge',
+    '₺': 'lira',
+    '₼': 'manat',
+    '₾': 'lari',
+    '₿': 'bitcoin',
+}
+
+MINOR_CURRENCY_MAP = {
+    'Dollar': 'cent',
+    'Euro': 'cent',
+    'Pound': 'penny',
+    'Yen': 'sen',
+    'Rupee': 'paisa',
+    'Ruble': 'kopeck',
+    'Won': 'jeon',
+    'Shekel': 'agora',
+    'Baht': 'satang',
+    'Dong': 'hao',
+    'Peso': 'centavo',
+    'Hryvnia': 'kopiyka',
+    'Naira': 'kobo',
+    'Cedi': 'pesewa',
+    'Colón': 'céntimo',
+    'Tögrög': 'möngö',
+    'Tenge': 'tiyn',
+    'Lira': 'kuruş',
+    'Manat': 'qəpik',
+    'Lari': 'tetri',
+    'Bitcoin': 'satoshi',
+}
 
 def custom_tokenizer(nlp):
     prefix_patterns = list(nlp.Defaults.prefixes)
@@ -32,21 +92,26 @@ def custom_tokenizer(nlp):
 
 nlp.tokenizer = custom_tokenizer(nlp)
 
-OPERATOR_MAP = {
-    '+': 'plus',
-    '-': 'minus',
-    '*': 'times',
-    '/': 'divided by',  # TODO: divided by or over?
-    '=': 'equals',
-    '^': 'to the power of',
-    '**': 'to the power of',
-    '//': 'integer division by',
-    '(': 'open parentheses',
-    ')': 'close parentheses',
-}
-
 # currencies
-def interpret_currency_dollars(number: float) -> str: 
+def interpret_currency_dollars(number: float) -> str:
+    as_str = f"{number:.2f}"
+    whole_str, fractional_str = as_str.split(".")
+    whole_val = int(whole_str)
+    fractional_val = int(fractional_str)
+
+    if fractional_val == 0:
+        return f"{num2words(whole_val)} dollars"
+    return f"{num2words(whole_val)} dollars {num2words(fractional_val)} cents"
+
+def token_is_currency(token) -> bool:
+    return bool(CURRENCY_MAP.get(token.text, False))
+
+# def interpret_currency(token, next_token, prev_token) -> str:
+#     currency_symbol = 
+
+def interpret_currency(token) -> str:
+    price = CURRENCY_MAP(token.text)
+    price.currency
     as_str = f"{number:.2f}"
     whole_str, fractional_str = as_str.split(".")
     whole_val = int(whole_str)
@@ -177,7 +242,7 @@ def preprocess_text(text: str) -> str:
 
 def analyze_text(text: str) -> str:
     doc = nlp(preprocess_text(text))
-    #breakpoint()
+    # breakpoint()
     transformed_tokens = []
     i = 0
 
@@ -257,7 +322,7 @@ def analyze_text(text: str) -> str:
                     transformed_tokens.append(convert_number_to_words(numeric_val, to_year=True))
                     i += 1
                     continue
-
+# here
             if prev_token and prev_token.text == "$":
                 if transformed_tokens and transformed_tokens[-1] == '$':
                     transformed_tokens.pop()
@@ -362,4 +427,4 @@ def analyze_text(text: str) -> str:
     return "".join(final_output).strip()
 
 if __name__ == '__main__':
-    print(analyze_text('I have five dollars and € ten'))
+    print(analyze_text('I have ₪5 and 10€ ten'))
