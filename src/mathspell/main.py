@@ -47,28 +47,74 @@ CURRENCY_MAP = {
     '₿': 'bitcoin',
 }
 
+ALTERNATIVE_CURRENCIES = {
+    'dollar': '$',
+    'usd': '$',
+    'euro': '€',
+    'eur': '€',
+    'pound': '£',
+    'gbp': '£',
+    'yen': '¥',
+    'jpy': '¥',
+    'rupee': '₹',
+    'inr': '₹',
+    'ruble': '₽',
+    'rub': '₽',
+    'won': '₩',
+    'krw': '₩',
+    'shekel': '₪',
+    'ils': '₪',
+    'baht': '฿',
+    'thb': '฿',
+    'dong': '₫',
+    'vnd': '₫',
+    'peso': '₱',
+    'php': '₱',
+    'hryvnia': '₴',
+    'uah': '₴',
+    'naira': '₦',
+    'ngn': '₦',
+    'cedi': '₵',
+    'ghs': '₵',
+    'colón': '₡',
+    'crc': '₡',
+    'tögrög': '₮',
+    'mnt': '₮',
+    'tenge': '₸',
+    'kzt': '₸',
+    'lira': '₺',
+    'try': '₺',
+    'manat': '₼',
+    'azn': '₼',
+    'lari': '₾',
+    'gel': '₾',
+    'bitcoin': '₿',
+    'btc': '₿'
+}
+
 MINOR_CURRENCY_MAP = {
-    'Dollar': 'cent',
-    'Euro': 'cent',
-    'Pound': 'penny',
-    'Yen': 'sen',
-    'Rupee': 'paisa',
-    'Ruble': 'kopeck',
-    'Won': 'jeon',
-    'Shekel': 'agora',
-    'Baht': 'satang',
-    'Dong': 'hao',
-    'Peso': 'centavo',
-    'Hryvnia': 'kopiyka',
-    'Naira': 'kobo',
-    'Cedi': 'pesewa',
-    'Colón': 'céntimo',
-    'Tögrög': 'möngö',
-    'Tenge': 'tiyn',
-    'Lira': 'kuruş',
-    'Manat': 'qəpik',
-    'Lari': 'tetri',
-    'Bitcoin': 'satoshi',
+    'dollar': 'cent',
+    'euro': 'cent',
+    'pound': 'penny',
+    'yen': 'sen',
+    'rupee': 'paisa',
+    'ruble': 'kopeck',
+    'won': 'jeon',
+    'shekel': 'agora',
+    'baht': 'satang',
+    'dong': 'hao',
+    'peso': 'centavo',
+    'hryvnia': 'kopiyka',
+    'naira': 'kobo',
+    'cedi': 'pesewa',
+    'colón': 'céntimo',
+    'tögrög': 'möngö',
+    'tenge': 'tiyn',
+    'lira': 'kuruş',
+    'manat': 'qəpik',
+    'lari': 'tetri',
+    'bitcoin': 'satoshi'
+
 }
 
 def custom_tokenizer(nlp):
@@ -93,52 +139,27 @@ def custom_tokenizer(nlp):
 nlp.tokenizer = custom_tokenizer(nlp)
 
 # currencies
-def interpret_currency_dollars(number: float) -> str:
+def interpret_currency(number: float, currency_name: str, minor_currency_name: str) -> str:
     as_str = f"{number:.2f}"
     whole_str, fractional_str = as_str.split(".")
     whole_val = int(whole_str)
     fractional_val = int(fractional_str)
-
+    if whole_val > 1: currency_name += 's'
+    if fractional_val > 1: fractional_val += 's'
+ 
     if fractional_val == 0:
-        return f"{num2words(whole_val)} dollars"
-    return f"{num2words(whole_val)} dollars {num2words(fractional_val)} cents"
+        return f"{num2words(whole_val)} {currency_name}"
+    return f"{num2words(whole_val)} {currency_name} {num2words(fractional_val)} {minor_currency_name}"
 
 def token_is_currency(token) -> bool:
     return bool(CURRENCY_MAP.get(token.text, False))
 
-# def interpret_currency(token, next_token, prev_token) -> str:
-#     currency_symbol = 
-
-def interpret_currency(token) -> str:
-    price = CURRENCY_MAP(token.text)
-    price.currency
-    as_str = f"{number:.2f}"
-    whole_str, fractional_str = as_str.split(".")
-    whole_val = int(whole_str)
-    fractional_val = int(fractional_str)
-
-    if fractional_val == 0:
-        return f"{num2words(whole_val)} dollars"
-    return f"{num2words(whole_val)} dollars {num2words(fractional_val)} cents"
-
+def convert_to_currency(token) -> bool:
+    return CURRENCY_MAP.get(token.text)
+    
 def interpret_currency_bucks(number: float) -> str:
     rounded = round(number)
     return f"{num2words(rounded)} bucks"
-
-def interpret_currency_large_scale(number: float, scale: str) -> str:
-    if number.is_integer():
-        number_words = num2words(int(number))
-    else:
-        whole_part = int(number)
-        fractional_part = int(round((number - whole_part) * 10**len(str(number).split('.')[-1])))
-        
-        whole_words = num2words(whole_part)
-        fractional_words = num2words(fractional_part)
-        
-        number_words = f"{whole_words} point {fractional_words}"
-    
-    return f"{number_words} {scale}"
-
 
 # ordinals
 def convert_ordinal_string(token_text: str) -> str:
@@ -163,7 +184,7 @@ def is_illion_scale(token):
         return True
 
     abbreviation = token.text.lower()
-    return abbreviation in {"m", "b", "t"}
+    return abbreviation in {"m", "b", "tr", 'gaz'}
 
 # math
 
@@ -298,6 +319,11 @@ def analyze_text(text: str) -> str:
                 continue
             except ValueError:
                 pass
+        if token_is_currency(token):
+            currency = convert_to_currency(token)
+            transformed_tokens.append(currency)
+            i += 1
+            continue
 
         if token.like_num:
             try:
@@ -323,70 +349,62 @@ def analyze_text(text: str) -> str:
                     i += 1
                     continue
 # here
-            if prev_token and prev_token.text == "$":
-                if transformed_tokens and transformed_tokens[-1] == '$':
-                    transformed_tokens.pop()
-
-                if next_token and is_illion_scale(next_token):
-                    scale_word = next_token.text.lower()
-                    converted = interpret_currency_large_scale(numeric_val, scale_word)
-
-                    if (i + 2) < len(doc):
-                        subsequent_token = doc[i + 2]
-                        if subsequent_token.lemma_.lower() in {"dollar", "dollars", "usd"}:
-                            converted += " dollars"
-                            i += 3
-                        else:
-                            i += 2
-                    else:
-                        i += 2
-
-                    transformed_tokens.append(converted)
+            if next_token and is_illion_scale(next_token):
+                scale_word = next_token.text.lower()
+                if next_next_token.lemma_.lower() in ALTERNATIVE_CURRENCIES.keys() and prev_token and token_is_currency(prev_token):
+                    transformed_tokens.pop() 
+                    transformed_text = f"{num2words(numeric_val)} {scale_word} {next_next_token.text}"
+                    transformed_tokens.append(transformed_text)
+                    i += 3
+                    continue
+                elif next_next_token.lemma_.lower() in ALTERNATIVE_CURRENCIES.keys():
+                    transformed_text = f"{num2words(numeric_val)} {scale_word} {next_next_token.text}"
+                    transformed_tokens.append(transformed_text)
+                    i += 3
+                    continue
+                elif prev_token and token_is_currency(prev_token):
+                    currency = transformed_tokens.pop() 
+                    if numeric_val > 1: currency += 's'
+                    transformed_text = f"{num2words(numeric_val)} {scale_word} {currency}"
+                    transformed_tokens.append(transformed_text)
+                    i += 3
                     continue
                 else:
-                    converted = interpret_currency_dollars(numeric_val)
-                    if next_token and next_token.lemma_.lower() in {"dollar", "dollars", "usd"}:
-                        transformed_tokens.append(converted)
-                        i += 2  # skip numeric and 'dollars'
-                        continue
-                    elif next_token and next_token.lemma_.lower() in {"buck", "bucks"}:
+                    transformed_text = f"{num2words(numeric_val)} {scale_word}"
+                    i += 2
+                    continue
+
+            if prev_token and token_is_currency(prev_token):
+                if next_token:
+                    transformed_tokens.pop()
+                    currency_name = next_token.lemma_.lower()
+                    if currency_name in {"buck", "bucks"}:
                         converted = interpret_currency_bucks(numeric_val)
                         transformed_tokens.append(converted)
                         i += 2
                         continue
-                    else:
+                    elif currency_name in ALTERNATIVE_CURRENCIES.keys():
+                        minor_currency_name = MINOR_CURRENCY_MAP.get(currency_name, 'subunit')
+                        converted = interpret_currency(numeric_val, currency_name, minor_currency_name)
                         transformed_tokens.append(converted)
+                        i += 2
+                        continue
+                    else:
+                        transformed_tokens.append(num2words(numeric_val))
                         i += 1
                         continue
 
-            if next_token and is_illion_scale(next_token):
-                scale_word = next_token.text.lower()
-                converted = interpret_currency_large_scale(numeric_val, scale_word)
+            # if next_token and next_token.lemma_.lower() in {"dollar", "dollars", "usd"}:
+            #     converted = interpret_currency(numeric_val, 'dollar', 'cent')
+            #     transformed_tokens.append(converted)
+            #     i += 2
+            #     continue
 
-                # check if 'dollars' follows the scale word
-                if next_next_token:
-                    if next_next_token.lemma_.lower() in {"dollar", "dollars", "usd"}:
-                        converted += " dollars"
-                        i += 3  # skip number, scale word, and 'dollars'
-                    else:
-                        i += 2  # skip number and scale word
-                else:
-                    i += 2  # skip number and scale word
-
-                transformed_tokens.append(converted)
-                continue
-
-            if next_token and next_token.lemma_.lower() in {"dollar", "dollars", "usd"}:
-                converted = interpret_currency_dollars(numeric_val)
-                transformed_tokens.append(converted)
-                i += 2
-                continue
-
-            if next_token and next_token.lemma_.lower() in {"buck", "bucks"}:
-                converted = interpret_currency_bucks(numeric_val)
-                transformed_tokens.append(converted)
-                i += 2
-                continue
+            # if next_token and next_token.lemma_.lower() in {"buck", "bucks"}:
+            #     converted = interpret_currency_bucks(numeric_val)
+            #     transformed_tokens.append(converted)
+            #     i += 2
+            #     continue
 
             converted = convert_number_to_words(numeric_val)
             transformed_tokens.append(converted)
@@ -409,22 +427,28 @@ def analyze_text(text: str) -> str:
         i += 1
 
     final_output = []
-    for tok in transformed_tokens:
-        if re.fullmatch(r"[.,!?;:]+", tok):
-            if final_output:
-                final_output[-1] = final_output[-1].rstrip() + tok
-            else:
-                final_output.append(tok)
-        else:
-            if final_output and re.search(r"[.,!?;:]$", final_output[-1].rstrip()):
-                final_output.append(" " + tok)
-            else:
-                if final_output and not final_output[-1].isspace():
-                    final_output.append(" " + tok)
+    try:
+        for tok in transformed_tokens:
+            if re.fullmatch(r"[.,!?;:]+", tok):
+                if final_output:
+                    final_output[-1] = final_output[-1].rstrip() + tok
                 else:
                     final_output.append(tok)
+            else:
+                if final_output and re.search(r"[.,!?;:]$", final_output[-1].rstrip()):
+                    final_output.append(" " + tok)
+                else:
+                    if final_output and not final_output[-1].isspace():
+                        final_output.append(" " + tok)
+                    else:
+                        final_output.append(tok)
+    except TypeError as e:
+        raise TypeError(
+            f"tok: {tok}\n {e}"
+        )
+
 
     return "".join(final_output).strip()
 
 if __name__ == '__main__':
-    print(analyze_text('I have ₪5 and 10€ ten'))
+    print(analyze_text('I have $3.8'))
