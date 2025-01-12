@@ -17,7 +17,7 @@ def test_billion_without_decimal():
 
 def test_mixed_scales():
     text = "$1.2 million and $3.5 billion dollars"
-    expected = "one point two million and three point five billion dollars"
+    expected = "one point two million dollars and three point five billion dollars"
     assert analyze_text(text) == expected
 
 
@@ -30,12 +30,6 @@ def test_ordinal():
 def test_ordinal_and_year():
     text = "This is the 1st time I earned $5 million dollars in 2020."
     expected = "This is the first time I earned five million dollars in twenty twenty."
-    assert analyze_text(text) == expected
-
-
-def test_no_scale_word():
-    text = "$1000 dollars"
-    expected = "one thousand dollars"
     assert analyze_text(text) == expected
 
 

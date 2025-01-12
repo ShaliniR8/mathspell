@@ -124,10 +124,13 @@ def custom_tokenizer(nlp):
 
     if r"(?<=[0-9])/(?=[0-9])" not in infix_patterns:
         infix_patterns.append(r"(?<=[0-9])/(?=[-+0-9])")
+        
     if r"\)" not in infix_patterns:
         infix_patterns.append(r"\)")
     if r"\(" not in infix_patterns:
         infix_patterns.append(r"\(")
+    if r"(?<=[\w\(\)])[^\w\s/.,](?=[\w\(\)])" not in infix_patterns:
+        infix_patterns.append(r"(?<=[\w\(\)])[^\w\s/.,](?=[\w\(\)])")
     
     prefix_regex = spacy.util.compile_prefix_regex(prefix_patterns)
     infix_regex = spacy.util.compile_infix_regex(infix_patterns)
@@ -149,8 +152,7 @@ def interpret_currency(number: float, currency_name: str, minor_currency_name: s
     whole_val = int(whole_str)
     fractional_val = int(fractional_str)
     if whole_val > 1: currency_name += 's'
-    if fractional_val > 1: fractional_val += 's'
- 
+    if fractional_val > 1: minor_currency_name += 's'
     if fractional_val == 0:
         return f"{num2words(whole_val)} {currency_name}"
     return f"{num2words(whole_val)} {currency_name} {num2words(fractional_val)} {minor_currency_name}"
@@ -228,7 +230,6 @@ def token_is_a_quantity(string: str):
         q = quantity_parser(string)
         return bool(q and not q.dimensionless)
     except AttributeError as e:
-        breakpoint()
         return False
 
 def units_to_string(units: dict) -> str: 
@@ -374,7 +375,6 @@ def analyze_text(text: str) -> str:
 
         if token.like_num:
             try:
-                # breakpoint()
                 numeric_val = float(token.text.replace(',', ''))
             except ValueError:
                 if token.text.count('.') > 1: 
@@ -398,8 +398,7 @@ def analyze_text(text: str) -> str:
                     continue
 # here
             if prev_token and token_is_currency(prev_token):
-                if transformed_tokens and transformed_tokens[-1] == prev_token.text:
-                    transformed_tokens.pop()
+                transformed_tokens.pop()
 
                 if next_token and is_illion_scale(next_token):
                     scale_word = next_token.text.lower()
@@ -410,6 +409,8 @@ def analyze_text(text: str) -> str:
                             converted += f" {next_next_token.text}"
                             i += 3
                         else:
+                            currency_name = CURRENCY_MAP[prev_token.text]
+                            converted += f" {currency_name}s"
                             i += 2
                     else:
                         i += 2
@@ -417,24 +418,12 @@ def analyze_text(text: str) -> str:
                     transformed_tokens.append(converted)
                     continue
                 else:
-                    if next_token:
-                        currency_name = next_token.lemma_.lower()
-                        if currency_name in {"buck", "bucks"}:
-                            converted = interpret_currency_bucks(numeric_val)
-                            transformed_tokens.append(converted)
-                            i += 2
-                            continue
-                        else:
-                            if currency_name in ALTERNATIVE_CURRENCIES.keys():
-                                minor_currency_name = MINOR_CURRENCY_MAP.get(currency_name, 'subunit')
-                                converted = interpret_currency(numeric_val, currency_name, minor_currency_name)
-                                transformed_tokens.append(converted)
-                                i += 2
-                                continue
-                    else:
-                        transformed_tokens.append(converted)
-                        i += 1
-                        continue
+                    currency_name = CURRENCY_MAP.get(prev_token.text)
+                    minor_currency_name = MINOR_CURRENCY_MAP.get(currency_name, 'subunit')
+                    converted = interpret_currency(numeric_val, currency_name, minor_currency_name)
+                    transformed_tokens.append(converted)
+                    i += 1
+                    continue
 
             if next_token and is_illion_scale(next_token):
                 scale_word = next_token.text.lower()
@@ -451,18 +440,6 @@ def analyze_text(text: str) -> str:
                     i += 2
 
                 transformed_tokens.append(converted)
-                continue
-
-            if next_token and next_token.lemma_.lower() in {"dollar", "dollars", "usd"}:
-                converted = interpret_currency(numeric_val, 'dollar', 'cent')
-                transformed_tokens.append(converted)
-                i += 2
-                continue
-
-            if next_token and next_token.lemma_.lower() in {"buck", "bucks"}:
-                converted = interpret_currency_bucks(numeric_val)
-                transformed_tokens.append(converted)
-                i += 2
                 continue
 
             converted = convert_number_to_words(numeric_val)
@@ -482,11 +459,21 @@ def analyze_text(text: str) -> str:
             i += 1
             continue
         
+        if token.text in CURRENCY_MAP:
+            currency_name = CURRENCY_MAP[token.text]
+            transformed_tokens.append(currency_name)
+            i+= 1
+            continue 
+
         matches = re.findall(r"\d+|[a-zA-Z]+", token.text)
         if matches is not []:
             [transformed_tokens.append(num2words(match) if match.isdigit() else match) for match in matches]
             i += 1
             continue
+
+        # mathes = re.findall(r"[^\w\s/.,]", token.text)
+        # if matches is not []:
+        #     breakpoint()
 
         transformed_tokens.append(token.text)
         i += 1
@@ -516,4 +503,4 @@ def analyze_text(text: str) -> str:
     return "".join(final_output).strip()
 
 if __name__ == '__main__':
-    print(analyze_text("The speed of light is approximately 3.00e8 m/s. The mass of the object is 1.23e4 kg"))
+    print(analyze_text("-3)^2"))
