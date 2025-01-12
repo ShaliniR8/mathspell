@@ -482,6 +482,12 @@ def analyze_text(text: str) -> str:
             i += 1
             continue
         
+        matches = re.findall(r"\d+|[a-zA-Z]+", token.text)
+        if matches is not []:
+            [transformed_tokens.append(num2words(match) if match.isdigit() else match) for match in matches]
+            i += 1
+            continue
+
         transformed_tokens.append(token.text)
         i += 1
 

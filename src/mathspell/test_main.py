@@ -242,11 +242,11 @@ def test_text_with_no_numbers():
 
 def test_numbers_embedded_in_words():
     text = "version2 update released."
-    expected = "version2 update released."
+    expected = "version two update released."
     assert analyze_text(text) == expected
 
     text = "Error code404 detected."
-    expected = "Error code404 detected."
+    expected = "Error code four hundred and four detected." # TODO: four 'oh' four if I wasn't being lazy
     assert analyze_text(text) == expected
 
 def test_scientific_and_standard_numbers():
