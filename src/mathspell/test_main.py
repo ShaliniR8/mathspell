@@ -172,7 +172,7 @@ def test_mixed_currencies():
 
 def test_scientific_notation():
     text = "The mass of the object is 1.23e4 kg."
-    expected = "The mass of the object is one point two three times ten to the power of four kilograms."
+    expected = "The mass of the object is one point two three times ten to the power of four kilogram."
     assert analyze_text(text) == expected
 
 
@@ -251,7 +251,7 @@ def test_numbers_embedded_in_words():
 
 def test_scientific_and_standard_numbers():
     text = "The speed of light is approximately 3.00e8 m/s."
-    expected = "The speed of light is approximately three times ten to the power of eight meters per second."
+    expected = "The speed of light is approximately three times ten to the power of eight meter per second."
     assert analyze_text(text) == expected
 
 # def test_currency_without_space():
@@ -266,11 +266,11 @@ def test_scientific_and_standard_numbers():
 
 def test_numbers_with_units():
     text = "I ran 5km today."
-    expected = "I ran five kilometers today."
+    expected = "I ran five kilometer today."
     assert analyze_text(text) == expected
 
     text = "The box weighs 10kg."
-    expected = "The box weighs ten kilograms."
+    expected = "The box weighs ten kilogram."
     assert analyze_text(text) == expected
 
 

@@ -123,7 +123,11 @@ def custom_tokenizer(nlp):
     suffix_patterns = list(nlp.Defaults.suffixes)
 
     if r"(?<=[0-9])/(?=[0-9])" not in infix_patterns:
-        infix_patterns.append(r"(?<=[0-9])/(?=[0-9])")
+        infix_patterns.append(r"(?<=[0-9])/(?=[-+0-9])")
+    if r"\)" not in infix_patterns:
+        infix_patterns.append(r"\)")
+    if r"\(" not in infix_patterns:
+        infix_patterns.append(r"\(")
     
     prefix_regex = spacy.util.compile_prefix_regex(prefix_patterns)
     infix_regex = spacy.util.compile_infix_regex(infix_patterns)
@@ -152,10 +156,7 @@ def interpret_currency(number: float, currency_name: str, minor_currency_name: s
     return f"{num2words(whole_val)} {currency_name} {num2words(fractional_val)} {minor_currency_name}"
 
 def token_is_currency(token) -> bool:
-    return bool(CURRENCY_MAP.get(token.text, False))
-
-def convert_to_currency(token) -> bool:
-    return CURRENCY_MAP.get(token.text)
+    return bool(CURRENCY_MAP.get(token.lemma_.lower(), False))
     
 def interpret_currency_bucks(number: float) -> str:
     rounded = round(number)
@@ -205,35 +206,61 @@ def handle_percentage(number: float) -> str:
     
     return f"{number_words} percent"
 
-def token_is_a_quantity(token):
-    q = quantity_parser(token.text)
-    return bool(q and not q.dimensionless)
+def operator_is_part_of_quantity(token, prev_token, prev_prev_token, next_token) -> bool:
+    if prev_prev_token and prev_prev_token.like_num:
+        string = f"{prev_prev_token.text} {prev_token.text}/{next_token.text}"
+    elif prev_prev_token and token_has_exponential_notation(prev_prev_token):
+        string = f"1 {prev_token.text}/{next_token.text}"
+    else:
+        return False
+    return bool(token.text == '/' and token_is_a_quantity(string))
 
-def convert_token_to_quantity(token):
-    q = quantity_parser(token.text)
+def convert_operator_part_of_quantity(prev_token, prev_prev_token, next_token) -> str:
+    if prev_prev_token.like_num:
+        string = f"{prev_prev_token.text} {prev_token.text}/{next_token.text}"
+        return convert_token_to_quantity(string)
+    elif token_has_exponential_notation(prev_prev_token):
+        string = f"1 {prev_token.text}/{next_token.text}"
+        return convert_token_to_quantity(string, True)
+               
+def token_is_a_quantity(string: str):
+    try:
+        q = quantity_parser(string)
+        return bool(q and not q.dimensionless)
+    except AttributeError as e:
+        breakpoint()
+        return False
+
+def units_to_string(units: dict) -> str: 
+    format_map = { 1: "{key}", -1: "per {key}" } 
+    parts = [] 
+    for key, val in units.items(): 
+        if val in format_map: 
+            parts.append(format_map[val].format(key=key)) 
+        elif val > 1: 
+            parts.append(f"{key} to the power of {val}") 
+        elif val < -1: 
+            parts.append(f"per {key} to the power of {-val}") 
+    return " ".join(parts)
+    
+def convert_token_to_quantity(string: str, magnitude_is_exp: bool = False):
+    q = quantity_parser(string)
     magnitude = q.magnitude
-    units = " ".join(list(q.units._units))
-    # TODO: Handle cases where units is like 'foot ** 2'. Perhaps generate another NLP doc?
-    if magnitude > 1:
-        if units == 'foot':
-            units = 'feet'
-        else:
-            units += 's'
+    units = units_to_string(dict(q.units._units))
+    if magnitude_is_exp:
+        return units
     return f"{num2words(magnitude)} {units}"
 
-def tokens_are_a_quantity(token, next_token):
-    q = quantity_parser(f"{token.text} {next_token.text}")
+def tokens_are_a_quantity(combined_token_text: str) -> bool:
+    q = quantity_parser(combined_token_text)
     return bool(q and not q.dimensionless)
 
-def convert_tokens_to_quantity(token, next_token):
-    q = quantity_parser(f"{token.text} {next_token.text}")
+def convert_tokens_to_quantity(combined_token_text: str, magnitude_is_exp: bool = False) -> str:
+    q = quantity_parser(combined_token_text)
     magnitude = q.magnitude
-    units = " ".join(list(q.units._units))
-    if magnitude > 1:
-        if units == 'foot':
-            units = 'feet'
-        else:
-            units += 's'
+    units = units_to_string(dict(q.units._units))
+    if magnitude_is_exp:
+        return units
     return f"{num2words(magnitude)} {units}"
 
 def token_has_exponential_notation(token):
@@ -261,15 +288,29 @@ def preprocess_text(text: str) -> str:
     preprocessed_text = text
     return preprocessed_text
 
+def interpret_large_scale(number: float, scale: str) -> str:
+    if number.is_integer():
+        number_words = num2words(int(number))
+    else:
+        whole_part = int(number)
+        fractional_part = int(round((number - whole_part) * 10**len(str(number).split('.')[-1])))
+        
+        whole_words = num2words(whole_part)
+        fractional_words = num2words(fractional_part)
+        
+        number_words = f"{whole_words} point {fractional_words}"
+    
+    return f"{number_words} {scale}"
+
 def analyze_text(text: str) -> str:
     doc = nlp(preprocess_text(text))
-    # breakpoint()
     transformed_tokens = []
     i = 0
 
     while i < len(doc):
         token = doc[i]
         prev_token = doc[i - 1] if i - 1 >= 0 else None
+        prev_prev_token = doc[i-2] if i - 2 >= 0 else None
         next_token = doc[i + 1] if i + 1 < len(doc) else None
         next_next_token = doc[i + 2] if i + 2 < len(doc) else None
 
@@ -280,7 +321,14 @@ def analyze_text(text: str) -> str:
 
         if token.is_punct:
             if token.text in OPERATOR_MAP:
-                transformed_tokens.append(OPERATOR_MAP[token.text])
+                if operator_is_part_of_quantity(token, prev_token, prev_prev_token, next_token):
+                    transformed_tokens.pop()
+                    converted = convert_operator_part_of_quantity(prev_token, prev_prev_token, next_token)
+                    transformed_tokens.append(converted)
+                    i += 2
+                    continue
+                else:
+                    transformed_tokens.append(OPERATOR_MAP[token.text])
             else:
                 transformed_tokens.append(token.text)
             i += 1
@@ -289,6 +337,10 @@ def analyze_text(text: str) -> str:
         if token_has_exponential_notation(token):
             transformed_tokens.append(convert_exponential_notation_string(token.text))
             i += 1
+            if next_token and tokens_are_a_quantity(f"1 {next_token.text}"):
+                units = convert_tokens_to_quantity(f"1 {next_token.text}", True)
+                transformed_tokens.append(units)
+                i += 1
             continue
 
         if token_is_ordinal(token):
@@ -296,13 +348,13 @@ def analyze_text(text: str) -> str:
             i += 1
             continue
 
-        if token_is_a_quantity(token):
-            transformed_tokens.append(convert_token_to_quantity(token))
+        if token_is_a_quantity(token.text):
+            transformed_tokens.append(convert_token_to_quantity(token.text))
             i += 1
             continue
 
-        if token.like_num and next_token and tokens_are_a_quantity(token, next_token):
-            transformed_tokens.append(convert_tokens_to_quantity(token, next_token))
+        if token.like_num and next_token and tokens_are_a_quantity(f"{token.text} {next_token.text}"):
+            transformed_tokens.append(convert_tokens_to_quantity(f"{token.text} {next_token.text}"))
             i += 2
             continue
 
@@ -319,14 +371,10 @@ def analyze_text(text: str) -> str:
                 continue
             except ValueError:
                 pass
-        if token_is_currency(token):
-            currency = convert_to_currency(token)
-            transformed_tokens.append(currency)
-            i += 1
-            continue
 
         if token.like_num:
             try:
+                # breakpoint()
                 numeric_val = float(token.text.replace(',', ''))
             except ValueError:
                 if token.text.count('.') > 1: 
@@ -349,62 +397,73 @@ def analyze_text(text: str) -> str:
                     i += 1
                     continue
 # here
-            if next_token and is_illion_scale(next_token):
-                scale_word = next_token.text.lower()
-                if next_next_token.lemma_.lower() in ALTERNATIVE_CURRENCIES.keys() and prev_token and token_is_currency(prev_token):
-                    transformed_tokens.pop() 
-                    transformed_text = f"{num2words(numeric_val)} {scale_word} {next_next_token.text}"
-                    transformed_tokens.append(transformed_text)
-                    i += 3
-                    continue
-                elif next_next_token.lemma_.lower() in ALTERNATIVE_CURRENCIES.keys():
-                    transformed_text = f"{num2words(numeric_val)} {scale_word} {next_next_token.text}"
-                    transformed_tokens.append(transformed_text)
-                    i += 3
-                    continue
-                elif prev_token and token_is_currency(prev_token):
-                    currency = transformed_tokens.pop() 
-                    if numeric_val > 1: currency += 's'
-                    transformed_text = f"{num2words(numeric_val)} {scale_word} {currency}"
-                    transformed_tokens.append(transformed_text)
-                    i += 3
+            if prev_token and token_is_currency(prev_token):
+                if transformed_tokens and transformed_tokens[-1] == prev_token.text:
+                    transformed_tokens.pop()
+
+                if next_token and is_illion_scale(next_token):
+                    scale_word = next_token.text.lower()
+                    converted = interpret_large_scale(numeric_val, scale_word)
+
+                    if next_next_token:
+                        if next_next_token.lemma_.lower() in ALTERNATIVE_CURRENCIES.keys():
+                            converted += f" {next_next_token.text}"
+                            i += 3
+                        else:
+                            i += 2
+                    else:
+                        i += 2
+
+                    transformed_tokens.append(converted)
                     continue
                 else:
-                    transformed_text = f"{num2words(numeric_val)} {scale_word}"
-                    i += 2
-                    continue
-
-            if prev_token and token_is_currency(prev_token):
-                if next_token:
-                    transformed_tokens.pop()
-                    currency_name = next_token.lemma_.lower()
-                    if currency_name in {"buck", "bucks"}:
-                        converted = interpret_currency_bucks(numeric_val)
-                        transformed_tokens.append(converted)
-                        i += 2
-                        continue
-                    elif currency_name in ALTERNATIVE_CURRENCIES.keys():
-                        minor_currency_name = MINOR_CURRENCY_MAP.get(currency_name, 'subunit')
-                        converted = interpret_currency(numeric_val, currency_name, minor_currency_name)
-                        transformed_tokens.append(converted)
-                        i += 2
-                        continue
+                    if next_token:
+                        currency_name = next_token.lemma_.lower()
+                        if currency_name in {"buck", "bucks"}:
+                            converted = interpret_currency_bucks(numeric_val)
+                            transformed_tokens.append(converted)
+                            i += 2
+                            continue
+                        else:
+                            if currency_name in ALTERNATIVE_CURRENCIES.keys():
+                                minor_currency_name = MINOR_CURRENCY_MAP.get(currency_name, 'subunit')
+                                converted = interpret_currency(numeric_val, currency_name, minor_currency_name)
+                                transformed_tokens.append(converted)
+                                i += 2
+                                continue
                     else:
-                        transformed_tokens.append(num2words(numeric_val))
+                        transformed_tokens.append(converted)
                         i += 1
                         continue
 
-            # if next_token and next_token.lemma_.lower() in {"dollar", "dollars", "usd"}:
-            #     converted = interpret_currency(numeric_val, 'dollar', 'cent')
-            #     transformed_tokens.append(converted)
-            #     i += 2
-            #     continue
+            if next_token and is_illion_scale(next_token):
+                scale_word = next_token.text.lower()
+                converted = interpret_large_scale(numeric_val, scale_word)
 
-            # if next_token and next_token.lemma_.lower() in {"buck", "bucks"}:
-            #     converted = interpret_currency_bucks(numeric_val)
-            #     transformed_tokens.append(converted)
-            #     i += 2
-            #     continue
+                # check if 'dollars' follows the scale word
+                if next_next_token:
+                    if next_next_token.lemma_.lower() in ALTERNATIVE_CURRENCIES.keys():
+                        converted += f" {next_next_token.text}"
+                        i += 3 
+                    else:
+                        i += 2 
+                else:
+                    i += 2
+
+                transformed_tokens.append(converted)
+                continue
+
+            if next_token and next_token.lemma_.lower() in {"dollar", "dollars", "usd"}:
+                converted = interpret_currency(numeric_val, 'dollar', 'cent')
+                transformed_tokens.append(converted)
+                i += 2
+                continue
+
+            if next_token and next_token.lemma_.lower() in {"buck", "bucks"}:
+                converted = interpret_currency_bucks(numeric_val)
+                transformed_tokens.append(converted)
+                i += 2
+                continue
 
             converted = convert_number_to_words(numeric_val)
             transformed_tokens.append(converted)
@@ -451,4 +510,4 @@ def analyze_text(text: str) -> str:
     return "".join(final_output).strip()
 
 if __name__ == '__main__':
-    print(analyze_text('I have $3.8'))
+    print(analyze_text("The speed of light is approximately 3.00e8 m/s. The mass of the object is 1.23e4 kg"))
