@@ -193,7 +193,7 @@ def test_operators_without_spaces():
 
 
 def test_multiple_operators_in_a_row():
-    text = "5++3 --2"
+    text = "5++-3 --2"
     expected = "five plus plus three minus minus two"
     assert analyze_text(text) == expected
 

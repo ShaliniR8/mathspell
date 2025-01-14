@@ -1,6 +1,5 @@
 import re
 import spacy
-import warnings
 from spacy.tokenizer import Tokenizer
 import spacy.util
 from num2words import num2words
@@ -122,15 +121,16 @@ def custom_tokenizer(nlp):
     infix_patterns = list(nlp.Defaults.infixes)
     suffix_patterns = list(nlp.Defaults.suffixes)
 
+    if r"(\d+(?:\.\d+)?)e([+-]?\d+)|(?<=[a-zA-Z])(?=\d)|(?<=\d)(?=[a-zA-Z])" not in infix_patterns:
+        infix_patterns.append(r"(\d+(?:\.\d+)?)e([+-]?\d+)|(?<=[a-zA-Z])(?=\d)|(?<=\d)(?=[a-zA-Z])")
     if r"(?<=[0-9])/(?=[0-9])" not in infix_patterns:
         infix_patterns.append(r"(?<=[0-9])/(?=[-+0-9])")
-        
     if r"\)" not in infix_patterns:
         infix_patterns.append(r"\)")
     if r"\(" not in infix_patterns:
         infix_patterns.append(r"\(")
-    if r"(?<=[\w\(\)])[^\w\s/.,](?=[\w\(\)])" not in infix_patterns:
-        infix_patterns.append(r"(?<=[\w\(\)])[^\w\s/.,](?=[\w\(\)])")
+    if r"(?<=[\w\(\)])[^\w\s/.,'](?=[\w\(\)])" not in infix_patterns:
+        infix_patterns.append(r"(?<=[\w\(\)])[^\w\s/.,'](?=[\w\(\)])")
     
     prefix_regex = spacy.util.compile_prefix_regex(prefix_patterns)
     infix_regex = spacy.util.compile_infix_regex(infix_patterns)
@@ -165,18 +165,16 @@ def interpret_currency_bucks(number: float) -> str:
     return f"{num2words(rounded)} bucks"
 
 # ordinals
-def convert_ordinal_string(token_text: str) -> str:
-    match = re.match(r"^(-?\d+)(st|nd|rd|th)$", token_text, re.IGNORECASE)
-    if not match:
-        return token_text
+def convert_ordinal_string(token_text: str, next_token_text: str) -> str:
+    match = re.match(r"^(-?\d+)(st|nd|rd|th)$", f"{token_text}{next_token_text}", re.IGNORECASE)
     number_part = match.group(1)
     try:
         return num2words(int(number_part), to="ordinal")
     except ValueError:
         return token_text
 
-def token_is_ordinal(token) -> bool:
-    return bool(re.match(r"^-?\d+(st|nd|rd|th)$", token.text, re.IGNORECASE))
+def token_is_ordinal(token, next_token) -> bool:
+    return bool(re.match(r"^(-?\d+)(st|nd|rd|th)$", f"{token.text}{next_token.text}", re.IGNORECASE))
 
 # datetime
 def looks_like_year_context(token) -> bool:
@@ -307,14 +305,12 @@ def analyze_text(text: str) -> str:
     doc = nlp(preprocess_text(text))
     transformed_tokens = []
     i = 0
-
     while i < len(doc):
         token = doc[i]
         prev_token = doc[i - 1] if i - 1 >= 0 else None
         prev_prev_token = doc[i-2] if i - 2 >= 0 else None
         next_token = doc[i + 1] if i + 1 < len(doc) else None
         next_next_token = doc[i + 2] if i + 2 < len(doc) else None
-
         if token.is_space:
             transformed_tokens.append(token.text)
             i += 1
@@ -344,9 +340,9 @@ def analyze_text(text: str) -> str:
                 i += 1
             continue
 
-        if token_is_ordinal(token):
-            transformed_tokens.append(convert_ordinal_string(token.text))
-            i += 1
+        if token.like_num and next_token and token_is_ordinal(token, next_token):
+            transformed_tokens.append(convert_ordinal_string(token.text, next_token.text))
+            i += 2
             continue
 
         if token_is_a_quantity(token.text):
@@ -465,16 +461,6 @@ def analyze_text(text: str) -> str:
             i+= 1
             continue 
 
-        matches = re.findall(r"\d+|[a-zA-Z]+", token.text)
-        if matches is not []:
-            [transformed_tokens.append(num2words(match) if match.isdigit() else match) for match in matches]
-            i += 1
-            continue
-
-        # mathes = re.findall(r"[^\w\s/.,]", token.text)
-        # if matches is not []:
-        #     breakpoint()
-
         transformed_tokens.append(token.text)
         i += 1
 
@@ -503,4 +489,4 @@ def analyze_text(text: str) -> str:
     return "".join(final_output).strip()
 
 if __name__ == '__main__':
-    print(analyze_text("-3)^2"))
+    print(analyze_text("7th"))
