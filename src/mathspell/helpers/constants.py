@@ -2,7 +2,7 @@ OPERATOR_MAP = {
     '+': 'plus',
     '-': 'minus',
     '*': 'times',
-    '/': 'divided by',  # You can choose "over" if desired
+    '/': 'divided by',
     '=': 'equal to',
     '^': 'to the power of',
     '//': 'integer division by',
