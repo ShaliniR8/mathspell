@@ -1,2 +1,4 @@
-spacy>=3.0.0
+spacy
 num2words
+unit_parse
+pint==0.24.4
