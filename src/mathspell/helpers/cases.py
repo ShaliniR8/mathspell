@@ -1,5 +1,6 @@
 import re
 import spacy
+import datetime
 from typing import Optional
 from num2words import num2words
 from mathspell.helpers import constants as c 
@@ -71,7 +72,7 @@ def convert_time(time_str: str) -> str:
             dt = datetime.strptime(time_str, "%I:%M %p")
             hour = dt.hour if dt.hour != 0 else 12
             if dt.hour > 12:
-                hour = dt.hour - 12
+               hour = dt.hour - 12
             am_pm = am_pm_match.group(1).upper()
         else:
             dt = datetime.strptime(time_str, "%H:%M")

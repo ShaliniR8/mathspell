@@ -156,8 +156,8 @@ def analyze_text(text: str) -> str:
                     continue
 
                 else:
-                    currency_name = c.CURRENCY_MAP.get(prev_token.text)
-                    minor_currency_name = c.MINOR_CURRENCY_MAP.get(currency_name, 'subunit')
+                    currency_name = c.CURRENCY_MAP.get(prev_token.text, 'dollar')
+                    minor_currency_name = c.MINOR_CURRENCY_MAP.get(currency_name, 'cent')
                     converted = interpret_currency(numeric_val, currency_name, minor_currency_name)
                     transformed_tokens.append(converted)
                     i += 1

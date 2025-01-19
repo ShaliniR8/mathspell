@@ -14,6 +14,11 @@ MathSpell is a Python package for converting numbers into contextually appropria
     python -m spacy download en_core_web_sm
     ```
 
+3. Upgrade Pint to it's latest version if it is incompatible with the current version of numpy.
+    ```bash
+    pip install --upgrade pint
+    ```
+
 ## Usage
 
 After installation, you can use MathSpell to process text containing numbers. For example:
